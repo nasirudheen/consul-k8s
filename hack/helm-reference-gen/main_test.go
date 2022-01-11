@@ -475,7 +475,7 @@ key:
 			// Swap $ for `.
 			input := strings.Replace(c.Input, "$", "`", -1)
 
-			out, err := GenerateDocs(input)
+			out, err := GenerateDocs(input, "list")
 			require.NoError(t, err)
 
 			// Swap $ for `.
@@ -498,7 +498,7 @@ func TestGenerateDocsWithFullValues(t *testing.T) {
 	expBytes, err := ioutil.ReadFile(filepath.Join("fixtures", "full-values.golden"))
 	require.NoError(t, err)
 
-	actual, err := GenerateDocs(string(inputBytes))
+	actual, err := GenerateDocs(string(inputBytes), "list")
 	require.NoError(t, err)
 	if actual != string(expBytes) {
 		require.NoError(t, ioutil.WriteFile(filepath.Join("fixtures", "full-values.actual"), []byte(actual), 0644))

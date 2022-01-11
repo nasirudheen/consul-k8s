@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	"embed"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -45,22 +45,14 @@ var (
 	// ```
 	// And will not match the "# yaml comment" incorrectly.
 	commentPrefix = regexp.MustCompile(`(?m)^[^\S\n]*#[^\S\n]?`)
-
-	// docNodeTmpl is the go template used to print a DocNode node.
-	// We use $ instead of ` in the template so we can use the golang raw string
-	// format. We then do the replace from $ => `.
-	docNodeTmpl = template.Must(
-		template.New("").Parse(
-			strings.Replace(
-				`{{- if eq .Column 1 }}### {{ .Key }}
-
-{{ end }}{{ .LeadingIndent }}- ${{ .Key }}$ ((#v{{ .HTMLAnchor }})){{ if ne .FormattedKind "" }} (${{ .FormattedKind }}{{ if .FormattedDefault }}: {{ .FormattedDefault }}{{ end }}$){{ end }}{{ if .FormattedDocumentation}} - {{ .FormattedDocumentation }}{{ end }}`,
-				"$", "`", -1)),
-	)
 )
+
+//@go:embed templates
+var templates embed.FS
 
 func main() {
 	validateFlag := flag.Bool("validate", false, "only validate that the markdown can be generated, don't actually generate anything")
+	templateFlag := flag.String("template", "list", "template to use for generating the markdown")
 	consulRepoPath := "../../../consul"
 	flag.Parse()
 
@@ -92,7 +84,7 @@ func main() {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
-	out, err := GenerateDocs(string(inputBytes))
+	out, err := GenerateDocs(string(inputBytes), *templateFlag)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
@@ -101,6 +93,7 @@ func main() {
 	// If we're just validating that generation will succeed then we're done.
 	if *validateFlag {
 		fmt.Println("Validation successful")
+		fmt.Println(out)
 		os.Exit(0)
 	}
 
@@ -137,12 +130,21 @@ func main() {
 	fmt.Printf("Updated with generated docs: %s\n", abs)
 }
 
-func GenerateDocs(yamlStr string) (string, error) {
+func GenerateDocs(yamlStr, templateName string) (string, error) {
 	node, err := Parse(yamlStr)
 	if err != nil {
 		return "", err
 	}
 
+	// TODO get this running with embedded fs
+	tplBytes, err := ioutil.ReadFile("./templates/" + templateName + ".tpl")
+	if err != nil {
+		return "", err
+	}
+
+	docNodeTmpl := template.Must(
+		template.New("").Parse(string(tplBytes)),
+	)
 	children, err := generateDocsFromNode(docNodeTmpl, node)
 	if err != nil {
 		return "", err
@@ -155,95 +157,6 @@ func GenerateDocs(yamlStr string) (string, error) {
 	return toc + "\n\n" + enterpriseSubst + "\n", nil
 }
 
-// Parse parses yamlStr into a tree of DocNode's.
-func Parse(yamlStr string) (DocNode, error) {
-	var node yaml.Node
-	err := yaml.Unmarshal([]byte(yamlStr), &node)
-	if err != nil {
-		return DocNode{}, err
-	}
-
-	// Due to how the YAML is parsed this is the first real node.
-	rootNode := node.Content[0].Content
-	children, err := parseNodeContent(rootNode, "", false)
-	if err != nil {
-		return DocNode{}, err
-	}
-	return DocNode{
-		Column:   0,
-		Children: children,
-	}, nil
-}
-
-// parseNodeContent recursively parses the yaml nodes and outputs a DocNode
-// tree.
-func parseNodeContent(nodeContent []*yaml.Node, parentBreadcrumb string, parentWasMap bool) ([]DocNode, error) {
-	var docNodes []DocNode
-
-	// This is a special type of node where it's an array of maps.
-	// e.g.
-	// ````
-	// ingressGateways:
-	// - name: name
-	// ````
-	//
-	// In this case we show the docs as:
-	// - ingress-gateway: ingress gateway descrip
-	//   - name: name descrip.
-	//
-	// To do that, we actually need to skip the map node.
-	if len(nodeContent) == 1 {
-		return parseNodeContent(nodeContent[0].Content, parentBreadcrumb, true)
-	}
-
-	// skipNext is true if we should skip the next node. Due to how the YAML is
-	// parsed, a key: value pair results in two YAML nodes but we only need
-	// doc node out of that so in the loop we look ahead to the next node
-	// and use it to construct our DocNode. Then we can skip it on the next
-	// iteration.
-	skipNext := false
-	for i, child := range nodeContent {
-		if skipNext {
-			skipNext = false
-			continue
-		}
-
-		docNode, err := buildDocNode(i, child, nodeContent, parentBreadcrumb, parentWasMap)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := docNode.Validate(); err != nil {
-			return nil, &ParseError{
-				FullAnchor: docNode.HTMLAnchor(),
-				Err:        err.Error(),
-			}
-		}
-
-		docNodes = append(docNodes, docNode)
-		skipNext = true
-		continue
-	}
-	return docNodes, nil
-}
-
-func generateDocsFromNode(tm *template.Template, node DocNode) ([]string, error) {
-	var out []string
-	for _, child := range node.Children {
-		var nodeOut bytes.Buffer
-		err := tm.Execute(&nodeOut, child)
-		if err != nil {
-			return nil, err
-		}
-		childOut, err := generateDocsFromNode(tm, child)
-		if err != nil {
-			return nil, err
-		}
-		out = append(append(out, nodeOut.String()), childOut...)
-	}
-	return out, nil
-}
-
 // allScalars returns true if content contains only scalar nodes
 // with no chidren.
 func allScalars(content []*yaml.Node) bool {
@@ -253,32 +166,6 @@ func allScalars(content []*yaml.Node) bool {
 		}
 	}
 	return true
-}
-
-// toInlineYaml will return the yaml string representation for content
-// using the inline representation, i.e. `["a", "b"]`
-// instead of:
-// ```
-// - "a"
-// - "b"
-// ```
-func toInlineYaml(content []*yaml.Node) (string, error) {
-	// We have to use this struct so we can set the struct tag "flow" so the
-	// generated yaml uses the inline format.
-	type intermediary struct {
-		Arr []*yaml.Node `yaml:"arr,flow"`
-	}
-	i := intermediary{
-		Arr: content,
-	}
-	out, err := yaml.Marshal(i)
-	if err != nil {
-		return "", err
-	}
-	// Hack: because we had to use our struct, it has the key "arr: " which
-	// we need to trim. Before trimming it will look like:
-	// `arr: ["a","b"]`.
-	return strings.TrimPrefix(string(out), "arr: "), nil
 }
 
 func buildDocNode(nodeContentIdx int, currNode *yaml.Node, nodeContent []*yaml.Node, parentBreadcrumb string, parentWasMap bool) (DocNode, error) {
