@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test various smaller cases and special cases.
-func Test(t *testing.T) {
+// Test generating documentation for various smaller cases and special cases.
+func TestGenerateDocs(t *testing.T) {
 	cases := map[string]struct {
 		Input string
 		Exp   string
@@ -491,8 +491,8 @@ key:
 	}
 }
 
-// Test against a full values file and compare against a golden file.
-func TestFullValues(t *testing.T) {
+// Test generating documentation against a full values file and compare against a golden file.
+func TestGenerateDocsWithFullValues(t *testing.T) {
 	inputBytes, err := ioutil.ReadFile(filepath.Join("fixtures", "full-values.yaml"))
 	require.NoError(t, err)
 	expBytes, err := ioutil.ReadFile(filepath.Join("fixtures", "full-values.golden"))
