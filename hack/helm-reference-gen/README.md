@@ -4,6 +4,8 @@ This script generates markdown documentation out of the values.yaml file for use
 
 ## Usage
 
+From the root of the `consul-k8s` repo, generate Helm value documentation with
+
 ``` bash
 make gen-docs [consul-repo-path] [-validate]
 ```
