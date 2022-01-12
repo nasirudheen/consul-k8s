@@ -1,15 +1,12 @@
 package main
 
 import (
-	"embed"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
-	"text/template"
 
 	"gopkg.in/yaml.v3"
 )
@@ -19,44 +16,13 @@ const (
 	tocSuffix = "\n## All Values"
 )
 
-var (
-	// typeAnnotation matches the @type annotation. It captures the value of @type.
-	typeAnnotation = regexp.MustCompile(`(?m).*@type: (.*)$`)
-
-	// defaultAnnotation matches the @default annotation. It captures the value of @default.
-	defaultAnnotation = regexp.MustCompile(`(?m).*@default: (.*)$`)
-
-	// recurseAnnotation matches the @recurse annotation. It captures the value of @recurse.
-	recurseAnnotation = regexp.MustCompile(`(?m).*@recurse: (.*)$`)
-
-	// commentPrefix matches on the YAML comment prefix, e.g.
-	// ```
-	// # comment here
-	//   # comment with indent
-	// ```
-	// Will match on "comment here" and "comment with indent".
-	//
-	// It also properly handles YAML comments inside code fences, e.g.
-	// ```
-	// # Example:
-	// # ```yaml
-	// # # yaml comment
-	// # ````
-	// ```
-	// And will not match the "# yaml comment" incorrectly.
-	commentPrefix = regexp.MustCompile(`(?m)^[^\S\n]*#[^\S\n]?`)
-)
-
-//@go:embed templates
-var templates embed.FS
-
 func main() {
 	validateFlag := flag.Bool("validate", false, "only validate that the markdown can be generated, don't actually generate anything")
-	templateFlag := flag.String("template", "list", "template to use for generating the markdown")
+	templateFlag := flag.String("template", "table", "template to use for generating the markdown")
 	consulRepoPath := "../../../consul"
 	flag.Parse()
 
-	if len(os.Args) > 3 {
+	if len(os.Args) > 5 {
 		fmt.Println("Error: extra arguments")
 		os.Exit(1)
 	}
@@ -84,6 +50,7 @@ func main() {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
+
 	out, err := GenerateDocs(string(inputBytes), *templateFlag)
 	if err != nil {
 		fmt.Println(err.Error())
@@ -92,7 +59,7 @@ func main() {
 
 	// If we're just validating that generation will succeed then we're done.
 	if *validateFlag {
-		fmt.Println("Validation successful")
+		// fmt.Println("Validation successful")
 		fmt.Println(out)
 		os.Exit(0)
 	}
@@ -136,25 +103,13 @@ func GenerateDocs(yamlStr, templateName string) (string, error) {
 		return "", err
 	}
 
-	// TODO get this running with embedded fs
-	tplBytes, err := ioutil.ReadFile("./templates/" + templateName + ".tpl")
-	if err != nil {
-		return "", err
+	if templateName == "table" {
+		return FormatAsTables(node)
+	} else if templateName == "list" {
+		return FormatAsList(node)
+	} else {
+		return "", fmt.Errorf("unknown template name: %q", templateName)
 	}
-
-	docNodeTmpl := template.Must(
-		template.New("").Parse(string(tplBytes)),
-	)
-	children, err := generateDocsFromNode(docNodeTmpl, node)
-	if err != nil {
-		return "", err
-	}
-
-	enterpriseSubst := strings.ReplaceAll(strings.Join(children, "\n\n"), "[Enterprise Only]", "<EnterpriseAlert inline />")
-
-	// Add table of contents.
-	toc := generateTOC(node)
-	return toc + "\n\n" + enterpriseSubst + "\n", nil
 }
 
 // allScalars returns true if content contains only scalar nodes

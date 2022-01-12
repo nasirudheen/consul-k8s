@@ -1,9 +1,38 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+)
+
+var (
+	// typeAnnotation matches the @type annotation. It captures the value of @type.
+	typeAnnotation = regexp.MustCompile(`(?m).*@type: (.*)$`)
+
+	// defaultAnnotation matches the @default annotation. It captures the value of @default.
+	defaultAnnotation = regexp.MustCompile(`(?m).*@default: (.*)$`)
+
+	// recurseAnnotation matches the @recurse annotation. It captures the value of @recurse.
+	recurseAnnotation = regexp.MustCompile(`(?m).*@recurse: (.*)$`)
+
+	// commentPrefix matches on the YAML comment prefix, e.g.
+	// ```
+	// # comment here
+	//   # comment with indent
+	// ```
+	// Will match on "comment here" and "comment with indent".
+	//
+	// It also properly handles YAML comments inside code fences, e.g.
+	// ```
+	// # Example:
+	// # ```yaml
+	// # # yaml comment
+	// # ````
+	// ```
+	// And will not match the "# yaml comment" incorrectly.
+	commentPrefix = regexp.MustCompile(`(?m)^[^\S\n]*#[^\S\n]?`)
 )
 
 // Parse parses yamlStr into a tree of DocNode's.
