@@ -136,6 +136,11 @@ func (n DocNode) FormattedDocumentation() string {
 	return strings.TrimRight(strings.Join(indentedLines, "\n"), "\n ")
 }
 
+// Row returns the formatted table row for this node.
+func (n DocNode) Row() string {
+	return fmt.Sprintf("| `%s` | %s | | %s |", n.Key, strings.ReplaceAll(n.FormattedDocumentation(), "\n", ""), n.Default)
+}
+
 // FormattedKind returns the kind of this node, e.g. string, boolean, etc.
 func (n DocNode) FormattedKind() string {
 
@@ -170,6 +175,14 @@ func (n DocNode) FormattedKind() string {
 	default:
 		return fmt.Sprintf("%s '%v'", UnknownKindError, n.KindTag)
 	}
+}
+
+func (n DocNode) Header() string {
+	return "##" + strings.ReplaceAll(n.LeadingIndent(), " ", "#") + " `" + n.Key + "`\n"
+}
+
+func (n DocNode) IsMap() bool {
+	return n.FormattedKind() == ""
 }
 
 // LeadingIndent returns the leading indentation for the first line of this
