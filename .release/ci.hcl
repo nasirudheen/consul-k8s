@@ -4,7 +4,7 @@ project "consul-k8s" {
   team = "consul-k8s"
   slack {
     #notification_channel = "CBXF3CGAF" # team-consul-kubernetes
-    notification_channel - "C03BMK8CGHX" # consul-k8s-crt-testing
+    notification_channel - "C03BMK8CGHX" #  consul-k8s-crt-testing
   }
   github {
     organization = "hashicorp"
